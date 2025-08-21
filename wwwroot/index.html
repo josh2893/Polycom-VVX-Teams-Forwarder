@@ -1,0 +1,994 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PCP Phone Forwarder</title>
+  <script src="https://cdn.tailwindcss.com">
+    function CFOverlay.showHTML(title, message){
+      const panel = document.getElementById('overlayPanel');
+      document.getElementById('overlayTitle').textContent = title || 'Forwarding Status';
+      const msgEl = document.getElementById('overlayMsg');
+      if(Array.isArray(message)){ msgEl.innerHTML = message.map(x=>`<div style="margin-bottom:.25rem">${x}</div>`).join(''); }
+      else { msgEl.textContent = message || ''; }
+      panel.style.display = 'flex';
+    }
+    function hideOverlay(){
+      const panel = document.getElementById('overlayPanel');
+      panel.style.display = 'none';
+    }
+    document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') hideOverlay(); });
+    // Kick off checker immediately and poll every 5s
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => { try{ updateOnlineStatus(); }catch{} });
+} else {
+  try{ updateOnlineStatus(); }catch{}
+}
+try{ window.__netTimer && clearInterval(window.__netTimer); window.__netTimer = setInterval(updateOnlineStatus, 5000); }catch{}
+if(b) b.addEventListener('click', hideOverlay);
+      const bg=document.getElementById('overlayBackdrop'); if(bg) bg.addEventListener('click', hideOverlay);
+    });
+    
+    // Overlay helpers
+    function CFOverlay.showHTML(title, message){
+      try{
+        const panel = document.getElementById('overlayPanel');
+        if(!panel) return;
+        const titleEl = document.getElementById('overlayTitle');
+        const msgEl = document.getElementById('overlayMsg');
+        if(titleEl) titleEl.textContent = title || 'Forwarding Status';
+        if(msgEl){
+          if(Array.isArray(message)){
+            msgEl.innerHTML = message.map(x=>('<div style="margin-bottom:.25rem">'+x+'</div>')).join('');
+          } else {
+            msgEl.textContent = message || '';
+          }
+        }
+        panel.style.display = 'flex';
+      }catch(e){ console.error('overlay show error', e); }
+    }
+    function hideOverlay(){
+      try{
+        const panel = document.getElementById('overlayPanel');
+        if(panel) panel.style.display = 'none';
+      }catch(e){}
+    }
+    document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') hideOverlay(); });
+    document.addEventListener('DOMContentLoaded', ()=>{
+      const b=document.getElementById('overlayClose'); if(b) b.addEventListener('click', hideOverlay);
+      const bg=document.getElementById('overlayBackdrop'); if(bg) bg.addEventListener('click', hideOverlay);
+    });
+</script>
+  <style>
+    .fade-in { animation: fadein .25s ease-out; }
+    @keyframes fadein { from {opacity: 0; transform: translateY(6px)} to {opacity: 1; transform: translateY(0)} }
+    .glass { backdrop-filter: blur(8px); }
+    .btn { display:inline-flex; align-items:center; justify-content:center; gap:.5rem; border-radius:9999px; padding:.5rem 1.25rem; font-weight:600; box-shadow:0 2px 6px rgba(0,0,0,.1); transition:all .15s }
+    .btn:active { transform: scale(.96) }
+    .btn-forward { background:#4f46e5; color:#fff }
+    .btn-forward:hover { background:#6366f1 }
+    .btn-check { background:#0f172a; color:#fff }
+    .btn-check:hover { background:#1e293b }
+    .btn-clear { background:#fff; color:#334155; border:1px solid #e2e8f0 }
+    .btn-clear:hover { background:#f8fafc }
+    .btn-reboot { background:#dc2626; color:#fff }
+    .btn-reboot:hover { background:#ef4444 }
+    .tag { border-radius:9999px; padding:.15rem .5rem; font-size:.75rem }
+  
+    
+
+    /* Company brand background */
+    .brand-bg { background-color:#0b2445; }
+    .brand-bg::before{
+      content:""; position:fixed; inset:0; z-index:-1;
+      background-image:url('assets/branding/brand_bg.webp');
+      background-size:cover; background-position:center;
+      opacity:.18; pointer-events:none;
+    }
+@media (prefers-reduced-motion: reduce) {
+      .animate-ping { animation: none !important; }
+    }
+  </style>
+
+  <style>
+    /* wiki styles */
+    .wiki { font-size: 18px; line-height: 1.7; color: #0f172a; }
+    .wiki h3 { font-size: 22px; margin-top: 1.25rem; margin-bottom: 0.5rem; font-weight: 700; }
+    .wiki h4 { font-size: 20px; margin-top: 1rem; margin-bottom: 0.5rem; font-weight: 600; }
+    .wiki p { margin: 0.5rem 0 1rem 0; }
+    .wiki ul { margin: 0.5rem 0 1rem 1.25rem; list-style: disc; }
+    .wiki li { margin: 0.25rem 0; }
+    .wiki code { background: #f8fafc; border: 1px solid #e2e8f0; padding: 0.1rem 0.35rem; border-radius: 6px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.9em; }
+    .wiki .block { margin: 1rem 0; }
+    .wiki .imgwrap { border-radius: 12px; border: 1px solid #e2e8f0; box-shadow: 0 1px 2px rgba(16,24,40,0.06); padding: 6px; background: #fff; }
+    .wiki .badge { display: inline-block; border-radius: 9999px; padding: .15rem .6rem; font-size: .9rem; font-weight: 600; }
+  </style>
+
+</head>
+<body class="min-h-screen bg-gradient-to-b from-slate-50 via-white to-slate-50 text-slate-800 relative brand-bg"">
+  <div class="mx-auto max-w-4xl px-4 py-8">
+    <header class="relative mb-6 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        
+
+  <div class="relative w-10 h-10">
+    <span class="absolute inset-0 rounded-2xl animate-ping bg-indigo-400/30"></span>
+    <div class="relative grid place-items-center w-10 h-10 rounded-2xl shadow-sm ring-1 ring-indigo-200 bg-white">
+      <img src="phone.ico" alt="Phone" class="w-6 h-6 opacity-90" />
+    </div>
+  </div>
+  <div>
+    <h1 class="text-2xl font-semibold tracking-tight">PCP Phone Forwarder</h1>
+</div>
+</div>
+      <div class="flex items-center gap-3">
+  <div id="netIndicator" class="hidden sm:flex items-center gap-2 rounded-2xl bg-white px-3 py-1.5 shadow-sm ring-1 ring-slate-200">
+    <span id="netDot" class="inline-block h-2.5 w-2.5 rounded-full bg-slate-300"></span>
+          <span id="netLabel" class="text-sm text-slate-600">Unknown</span>
+          </div>
+  <button id="btnSettings" class="btn btn-clear">Settings</button>
+  <button id="btnHelp" class="btn btn-clear">Instructions</button>
+  <button id="btnDiagnostics" class="btn btn-clear">Diagnostics</button>
+</div>
+
+    </header>
+
+    <section class="fade-in rounded-3xl bg-white p-6 shadow-sm ring-1 ring-slate-100">
+      <div class="grid gap-6 md:grid-cols-2">
+        <div class="space-y-5">
+          <label class="block">
+            <span class="mb-1 block text-sm font-semibold">Mobile Number</span>
+            <input id="mobile" type="tel" inputmode="numeric" maxlength="10" placeholder="10 digits e.g. 0412345678" class="w-full rounded-full border border-slate-200 px-4 py-3 text-base outline-none focus:outline-none focus:ring-2 focus:ring-indigo-100" />
+            <p class="mt-2 text-xs text-slate-500">Exactly 10 digits. No spaces or dashes.</p>
+          </label>
+          <div class="flex flex-wrap gap-3">
+            <button id="btnForward" class="btn btn-forward">Forward</button>
+            <button id="btnCheck" class="btn btn-check">Check Forward</button>
+            <button id="btnClear" class="btn btn-clear">Clear</button>
+          </div>
+
+          <div class="rounded-2xl bg-indigo-50 p-4 text-sm text-indigo-900" id="notesPanel">
+            <p class="font-semibold">How it works</p>
+            <p class="mt-1">Use this tool to forward extension <strong>996</strong> (Priority Contact Person) to the currently rostered PCP.</p>
+            <p class="mt-1">Enter their mobile number and click <strong>Forward</strong> to route calls from <strong>996</strong> to that mobile. You can also click <strong>Check Forward</strong> to confirm Microsoft Teams reports the same number.</p>
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-4">
+          <div class="flex items-center justify-end">
+            
+          </div>
+          <div class="glass rounded-3xl bg-white/70 p-4 shadow-inner ring-1 ring-slate-100" id="resultsPanel">
+            <div class="mb-2 flex items-center justify-between">
+              <h3 class="text-sm font-semibold">Result</h3>
+              <span id="statusBadge" class="tag bg-slate-100 text-slate-700">Idle</span>
+            </div>
+            <pre id="result" class="max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-2xl bg-slate-50 p-3 text-xs text-slate-700"></pre>
+          </div>
+</div>
+</div>
+</div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- Diagnostics Modal -->
+  <div id="diagModal" class="fixed inset-0 z-[60] hidden place-items-center bg-black/30 p-4">
+    <div class="fade-in w-full max-w-3xl rounded-3xl bg-white p-6 shadow-xl">
+      <div class="mb-4 flex items-center justify-between">
+        <h2 class="text-lg font-semibold">Diagnostics</h2>
+        <button class="rounded-full p-2 hover:bg-slate-100" onclick="toggleDiagnostics(false)">✕</button>
+      </div>
+
+      <div class="mb-4">
+        <label class="flex items-center gap-2 text-sm text-slate-600 select-none">
+          <input id="verbose" type="checkbox" class="h-4 w-4 rounded border-slate-300" /> Verbose logs
+        </label>
+      </div>
+
+      
+      <div class="mb-3 flex items-center justify-end gap-2">
+        <button id="btnTest" class="btn btn-clear !py-1 !px-3 text-xs">Test Connection</button>
+        <button id="btnClearForward" class="btn btn-clear !py-1 !px-3 text-xs" title="Dial *32* to clear">Clear Forward</button>
+        <button id="btnReboot" class="btn btn-reboot !py-1 !px-3 text-xs">Reboot Phone</button>
+      </div>
+<div class="grid gap-4 md:grid-cols-2">
+        <div class="rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-100">
+          <div class="mb-2 flex items-center justify-between">
+            <h3 class="text-sm font-semibold">Activity</h3>
+            <div class="flex gap-2">
+              <button id="btnCopyLog" class="text-xs text-indigo-600 hover:underline">Copy</button>
+              <button id="btnClearLog" class="text-xs text-slate-500 hover:underline">Clear</button>
+            </div>
+          </div>
+          <ul id="log" class="max-h-56 space-y-2 overflow-auto text-xs"></ul>
+        </div>
+
+        <div class="rounded-2xl bg-white p-4 ring-1 ring-slate-100">
+          <div class="mb-2 flex items-center justify-between">
+            <h3 class="text-sm font-semibold">Connection</h3></div>
+          <pre id="diag" class="max-h-64 overflow-auto whitespace-pre-wrap break-words bg-slate-50 p-3 text-[11px]"></pre>
+          </div>
+</div>
+      </div>
+
+      <div class="mt-6 flex justify-end">
+        <button class="btn btn-clear" onclick="toggleDiagnostics(false)">Close</button>
+      </div>
+    </div>
+  </div>
+<!-- Settings Modal -->
+  <div id="settingsModal" class="fixed inset-0 z-50 hidden place-items-center bg-black/30 p-4">
+    <div class="fade-in w-full max-w-lg rounded-3xl bg-white p-6 shadow-xl">
+      <div class="mb-4 flex items-center justify-between">
+        <h2 class="text-lg font-semibold">Settings</h2>
+        <button class="rounded-full p-2 hover:bg-slate-100" onclick="toggleSettings(false)">✕</button>
+      </div>
+      <div class="grid gap-4">
+        <label class="block">
+          <span class="mb-1 block text-sm font-medium">PhoneNetAddress (Base URL)</span>
+          <input id="baseUrl" type="text" placeholder="e.g. https://192.168.24.12" class="w-full rounded-2xl border border-slate-200 px-4 py-2 outline-none focus:border-indigo-300 focus:ring-2 focus:ring-indigo-100" />
+        </label>
+        <div class="grid grid-cols-2 gap-4">
+          <label class="block">
+            <span class="mb-1 block text-sm font-medium">Username (optional)</span>
+            <input id="apiUser" type="text" class="w-full rounded-2xl border border-slate-200 px-4 py-2" />
+          </label>
+          <label class="block">
+            <span class="mb-1 block text-sm font-medium">Password (optional)</span>
+            <input id="apiPass" type="password" class="w-full rounded-2xl border border-slate-200 px-4 py-2" />
+          </label>
+        </div>
+        <div class="grid gap-2 md:grid-cols-2">
+          <label class="block">
+            <span class="mb-1 block text-xs font-medium text-slate-500">Forward endpoint (POST)</span>
+            <input id="endpointForward" type="text" placeholder="/api/v1/callctrl/dial" class="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm" />
+          </label>
+          <label class="block">
+            <span class="mb-1 block text-xs font-medium text-slate-500">Check endpoint (GET)</span>
+            <input id="endpointCheck" type="text" placeholder="/api/v1/mgmt/device/runningConfig" class="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm" />
+          </label>
+          <label class="block">
+            <span class="mb-1 block text-xs font-medium text-slate-500">Reboot endpoint (POST)</span>
+            <input id="endpointReboot" type="text" placeholder="/api/v1/mgmt/safeReboot" class="w-full rounded-2xl border border-slate-200 px-3 py-2 text-sm" />
+          </label>
+          <label class="block">
+            <span class="mb-1 block text-xs font-medium text-slate-500">Forward body template</span>
+            <textarea id="forwardBodyTpl" rows="4" class="w-full rounded-2xl border border-slate-200 px-3 py-2 text-xs">{"data":{"Dest":"*33*{{mobile}}"}}</textarea>
+          </label>
+        </div>
+        <div class="flex items-center justify-between">
+          <div class="text-xs text-slate-500">Stored locally.</div>
+          <div class="flex gap-2">
+            <button class="btn btn-clear" onclick="loadDefaults()">Reset</button>
+            <button class="btn btn-forward" onclick="saveSettings()">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const LS_KEY='pcp_forwarder_settings';
+    const defaults={
+      baseUrl:'',
+      apiUser:'', apiPass:'',
+      endpointForward:'/api/v1/callctrl/dial',
+      endpointCheck:'/api/v1/mgmt/device/runningConfig',
+      endpointReboot:'/api/v1/mgmt/safeReboot',
+      forwardBodyTpl:'{\n  "data": { "Dest": "*33*{{mobile}}", "Line": "1", "Type": "TEL" }\n}'
+    };
+    const getSettings=()=>({...defaults, ...(JSON.parse(localStorage.getItem(LS_KEY)||'{}'))});
+    const setStatus=(t,tone='slate')=>{ const b=document.getElementById('statusBadge'); b.textContent=t; b.className=`tag bg-${tone}-100 text-${tone}-700` };
+    const toast=(m)=>{ let t=document.getElementById('toast'); if(!t){ t=document.createElement('div'); t.id='toast'; t.className='fixed bottom-4 left-1/2 z-50 -translate-x-1/2 rounded-full bg-slate-900 px-4 py-2 text-sm text-white shadow-lg'; document.body.appendChild(t) } t.textContent=m; t.style.opacity=1; setTimeout(()=>t.style.opacity=0,1600) };
+    const addLog=(k,m)=>{ const ul=document.getElementById('log'); const li=document.createElement('li'); li.className='fade-in rounded-xl bg-white p-3 ring-1 ring-slate-100 shadow-sm'; const ts=new Date().toLocaleTimeString(); li.innerHTML=`<div class="mb-1 text-[10px] uppercase tracking-wider text-slate-400">${ts} · ${k}</div><div class="text-slate-800">${m}</div>`; ul.prepend(li) };
+    const val=id=>document.getElementById(id).value.trim();
+    function saveSettings(){
+      const base = val('baseUrl');
+      if (!base.toLowerCase().startsWith('https://')){ toast('Base URL must start with https://'); return;   try{ updateOnlineStatus(); }catch{}
+}
+      const s={ baseUrl:base, apiUser:val('apiUser'), apiPass:val('apiPass'),
+        endpointForward:val('endpointForward'), endpointCheck:val('endpointCheck'), endpointReboot:val('endpointReboot'),
+        forwardBodyTpl:document.getElementById('forwardBodyTpl').value };
+      localStorage.setItem(LS_KEY, JSON.stringify(s)); toggleSettings(false); toast('Saved settings'); syncSettingsUI();
+    }
+    try{ updateOnlineStatus(); }catch{}
+    function syncSettingsUI(){ const s=getSettings(); for(const [k,v] of Object.entries(s)){ const el=document.getElementById(k); if(el) el.value=v } }
+    function loadDefaults(){ localStorage.removeItem(LS_KEY); syncSettingsUI(); toast('Defaults restored') }
+
+    function toggleSettings(open){ document.getElementById('settingsModal').classList[open?'remove':'add']('hidden') }
+    function toggleDiagnostics(open){ document.getElementById('diagModal').classList[open?'remove':'add']('hidden') }
+    document.getElementById('btnSettings').addEventListener('click', ()=>{syncSettingsUI(); toggleSettings(true)});
+    document.getElementById('btnDiagnostics').addEventListener('click', ()=>{ toggleDiagnostics(true) });
+    document.getElementById('btnCopyLog').addEventListener('click', ()=>{ const text=Array.from(document.querySelectorAll('#log li .text-slate-800')).map(d=>d.textContent).join('\n'); navigator.clipboard.writeText(text); toast('Log copied') });
+    document.getElementById('btnClearLog').addEventListener('click', ()=>{ document.getElementById('log').innerHTML=''; });
+
+    const result=document.getElementById('result'); const diag=document.getElementById('diag'); const mobile=document.getElementById('mobile');
+    function validateMobile(v){ return /^\d{10}$/.test(v) }
+    mobile.addEventListener('input', e=>{ const v=e.target.value.replace(/\D/g,''); if(v!==e.target.value) e.target.value=v })
+    document.getElementById('btnClear').addEventListener('click', ()=>{ mobile.value=''; result.textContent=''; setStatus('Idle') })
+
+    async function nativeInvoke(kind,payload){
+      if(window.chrome?.webview && window.native?.invoke){ return await window.native.invoke(kind,payload) }
+      throw new Error('Native bridge not available');
+    }
+
+    document.getElementById('verbose').addEventListener('change', async (e)=>{
+      try{ await nativeInvoke('setVerbose', { value: !!e.target.checked }); addLog('Verbose', e.target.checked?'On':'Off') }catch{}
+    });
+    async function apiFetch(path, options={}){
+      const s=getSettings();
+      if(!s.baseUrl && !/^https?:\/\//i.test(path)){ throw new Error('Base URL not set') }
+      try{
+        return await nativeInvoke('apiFetch', { baseUrl:s.baseUrl||'', path, method: options.method||'GET', body: options.body||null, user:s.apiUser, pass:s.apiPass });
+      }catch(e){
+        return { ok:false, status:0, reason:'BRIDGE_ERROR', elapsedMs:0, error: String(e) };
+      }
+    }
+
+    
+    // --- Online indicator helpers ---
+    function setNetIndicator(colorClass, text){
+      const ind = document.getElementById('netIndicator');
+      const dot = document.getElementById('netDot');
+      const lab = document.getElementById('netLabel');
+      if(!ind || !dot || !lab) return;
+      ind.classList.remove('hidden');
+      dot.className = 'inline-block h-2.5 w-2.5 rounded-full ' + colorClass;
+      lab.textContent = text;
+    }
+    async function updateOnlineStatus(){
+      try{
+        const s = getSettings();
+        if(!s.baseUrl){ setNetIndicator('bg-slate-300', 'No URL'); return; }
+        setNetIndicator('bg-sky-400','Checking…');
+        const res = await apiFetch(val('endpointCheck'), { method:'GET' });
+        if(res && res.ok){ setNetIndicator('bg-emerald-500', 'Online'); }
+        else if(res && res.status>0){ setNetIndicator('bg-rose-500', 'Error '+res.status); }
+        else { setNetIndicator('bg-amber-500', 'Unreachable'); }
+      }catch(e){
+        setNetIndicator('bg-amber-500', 'Unreachable');
+      }
+    }
+    // Kick off checker on load and every 20s
+    document.addEventListener('DOMContentLoaded', ()=>{
+      try{ updateOnlineStatus(); }catch{}
+      try{ window.__netTimer && clearInterval(window.__netTimer); window.__netTimer = setInterval(updateOnlineStatus, 5000); }catch{}
+    });
+function teamsCallfwUrlFromProvisioning(serverUrl){
+      try{
+        const u = new URL(serverUrl);
+        // Insert callfw.php right after /device/
+        u.pathname = u.pathname.replace(/^\/device\//i, "/device/callfw.php/");
+        u.search = "";
+        u.hash = "";
+        return u.toString();
+      }catch{
+        return null;
+      }
+    }
+
+    async function doForward(){
+      const v=mobile.value.trim(); if(!validateMobile(v)){ toast('Enter a 10-digit number'); setStatus('Invalid','amber'); return }
+      setStatus('Forwarding…','indigo'); addLog('Forward', `*33*${v}`)
+      const s=getSettings(); const body=s.forwardBodyTpl.replaceAll('{{mobile}}', v)
+      const res=await apiFetch(val('endpointForward'), { method:'POST', body })
+      if (document.getElementById('verbose')?.checked) { if (document.getElementById('verbose')?.checked) { result.textContent = JSON.stringify(res,null,2)
+      if(res.ok){ setStatus('Forwarded','emerald'); } else { result.textContent = ''; } } else { result.textContent = ''; } toast('Forwarded') } else { setStatus('Failed','rose'); toast('Forward failed') }
+    }
+
+    
+    function extractForwardNumber(html){
+      try{
+        // Make a texty version: drop tags
+        const text = html.replace(/<script[\s\S]*?<\/script>/gi,'')
+                         .replace(/<style[\s\S]*?<\/style>/gi,'')
+                         .replace(/<[^>]+>/g,' ')
+                         .replace(/&nbsp;/g,' ')
+                         .replace(/\s+/g,' ')
+                         .trim();
+        // Look for ALWAYS: +61XXXXXXXXX anywhere
+        const m = text.match(/ALWAYS:\s*(\+61\d{9})/i);
+        return m ? m[1] : null;
+      }catch{ return null; }
+    }
+
+    function presentOverlayForForwardReport(report){
+  try{ if(report && (report.reported || report.notConfigured)){ CFOverlay.showResult({ ok: !!report.reported, alwaysNumber: report.reported||"", rawText: report.rawText||"" }); } }catch(e){}
+      if(!report) { CFOverlay.showHTML('Forwarding Status','Unable to determine forwarding status.'); return; }
+      if(report.note && report.status===403){ CFOverlay.showHTML('Not Checkable', report.note); return; }
+      if(report.notConfigured){ CFOverlay.showHTML('Forwarding Status','No call forwarding is configured.'); return; }
+      if(report.reported){ CFOverlay.showHTML('Forwarding Enabled', 'Forwarding is configured to the following number: ' + report.reported); return; }
+      CFOverlay.showHTML('Forwarding Status','Unable to determine forwarding status.');
+    }
+
+async function doCheck(){
+      setStatus('Checking…','slate'); addLog('Check','runningConfig + Teams callfw')
+      const rc = await apiFetch(val('endpointCheck'), { method:'GET' });
+      let parsed=null, callfwUrl=null;
+      try{ parsed = JSON.parse(rc.response.body) }catch{}
+      if(parsed?.data?.Provisioning?.Server){
+        callfwUrl = teamsCallfwUrlFromProvisioning(parsed.data.Provisioning.Server);
+      }
+
+      let report = { url: callfwUrl, ok: false, status: 0, reported: null, notConfigured: false, note: null };
+      if(callfwUrl){
+        const tf = await apiFetch(callfwUrl, { method:'GET' });
+        report.ok = tf.ok; report.status = tf.status;
+        if(tf && typeof tf.response?.body === 'string'){
+          const raw = tf.response.body;
+          // Robust search for ALWAYS: +61XXXXXXXXX anywhere
+          const num = extractForwardNumber(raw);
+          if(num){
+            report.reported = num;
+          }else{
+            // If instructions template present and no ALWAYS, treat as not configured
+            const textLower = raw.toLowerCase();
+            if (textLower.includes('set [always') || textLower.includes('reset [*32*')) {
+              report.notConfigured = true;
+            }
+          }
+        }
+        try { const h=new URL(callfwUrl).host; if(tf.status===403 && /\.sdg\.teams\.microsoft\.com$/i.test(h)){ report.note = 'mTLS-protected endpoint: not checkable from this PC app'; } } catch{}
+      } else {
+        report.note = 'Could not derive callfw.php URL from Provisioning.Server';
+      }
+
+      const out = { ok: rc.ok, status: rc.status, runningConfig: parsed, forwardCheck: report };
+      if (document.getElementById('verbose')?.checked) { if (document.getElementById('verbose')?.checked) { result.textContent = JSON.stringify(out, null, 2); } else { result.textContent = ''; } } else { result.textContent = ''; }
+      try{ presentOverlayForForwardReport(out.forwardCheck || out.teamsCallfw); }catch(e){ console.warn('overlay present error', e); }
+
+      if(report.note && report.status===403){ setStatus('Not checkable (mTLS)','slate'); CFOverlay.showHTML('Not Checkable', report.note); return; }
+      if(report.notConfigured){
+        setStatus('Forwarding not configured','amber');
+        CFOverlay.showHTML('Forwarding Status','No call forwarding is configured.');
+        return;
+      }
+      if(report.reported){
+        setStatus(`Forwarded to ${report.reported}`,'emerald');
+        CFOverlay.showHTML('Forwarding Enabled',`Forwarding is configured to the following number: ${report.reported}`);
+        return;
+      }
+      if(rc.ok){ setStatus('Checked','emerald'); toast('Checked') } else { setStatus('Failed','rose'); toast('Check failed') }
+    }
+
+    async function doReboot(){
+      const ok = confirm('Send reboot command?');
+      if(!ok) return;
+      setStatus('Rebooting…','rose'); addLog('Reboot','safeReboot')
+      const res=await apiFetch(val('endpointReboot'), { method:'POST', body: '' })
+      if (document.getElementById('verbose')?.checked) { if (document.getElementById('verbose')?.checked) { result.textContent = JSON.stringify(res,null,2)
+      if(res.ok){ setStatus('Reboot sent','amber'); } else { result.textContent = ''; } } else { result.textContent = ''; } toast('Reboot command sent') } else { setStatus('Failed','rose'); toast('Reboot failed') }
+    }
+
+    
+    async function doClearForward(){
+      const ok = confirm('Clear call forwarding (dial *32*)?');
+      if(!ok) return;
+      const diag = document.getElementById('diag');
+      if(diag) diag.textContent = 'Clearing…';
+      setStatus('Clearing…','slate'); addLog('Clear','*32*');
+      const sCfg = getSettings();
+      const body = '{\n  "data": { "Dest": "*32*", "Line": "1", "Type": "TEL" }\n}';
+      const res = await apiFetch(val('endpointForward'), { method:'POST', body });
+      if(diag) diag.textContent = JSON.stringify(res, null, 2);
+      if(res.ok){ setStatus('Cleared','emerald'); toast && toast('Forwarding cleared'); }
+      else { setStatus('Failed','rose'); toast && toast('Clear forward failed'); }
+    }
+document.getElementById('btnForward').addEventListener('click', doForward)
+    document.getElementById('btnCheck').addEventListener('click', doCheck)
+    document.getElementById('btnReboot').addEventListener('click', doReboot)
+    document.getElementById('btnClearForward').addEventListener('click', doClearForward)
+
+    document.getElementById('btnTest').addEventListener('click', async ()=>{
+      const s=getSettings(); if(!s.baseUrl){ diag.textContent='Set Base URL first.'; return }
+      diag.textContent='Testing…';
+      const res=await apiFetch('/api/v1/mgmt/device/runningConfig', { method:'GET' });
+      diag.textContent=JSON.stringify(res,null,2);
+      addLog('Diag', `Status ${res.status} in ${res.elapsedMs}ms`)
+    })
+
+    window.chrome?.webview?.addEventListener('message', (e)=>{
+      try{
+        const msg=JSON.parse(e.data);
+        if(msg && msg.replyTo==='__log__'){ addLog('Native', JSON.stringify(msg.data)); }
+      }catch{}
+    });
+
+    function onReady(){ syncSettingsUI() }
+    if(document.readyState==='loading'){ document.addEventListener('DOMContentLoaded', onReady) } else { onReady() }
+  </script>
+
+  
+  <!-- Forwarding Result Overlay -->
+  <div id="overlayPanel" style="display:none; position:fixed; inset:0; z-index:9999; align-items:center; justify-content:center;">
+    <div id="overlayBackdrop" style="position:absolute; inset:0; background:rgba(0,0,0,0.5);"></div>
+    <div style="position:relative; margin:1rem; width:100%; max-width:28rem; border-radius:1rem; background:#ffffff; color:#0f172a; box-shadow:0 20px 50px rgba(0,0,0,.2); border:1px solid rgba(0,0,0,.05);">
+      <div style="display:flex; align-items:center; justify-content:space-between; padding:12px 16px; border-bottom:1px solid rgba(15,23,42,.1)">
+        <h3 id="overlayTitle" style="margin:0; font-size:16px; font-weight:600;">Forwarding Status</h3>
+        <button id="overlayClose" style="border:0; border-radius:.6rem; padding:6px 10px; font-size:14px; background:#f1f5f9; cursor:pointer;">Close</button>
+      </div>
+      <div style="padding:16px;">
+        <p id="overlayMsg" style="margin:0; line-height:1.5;"></p>
+      </div>
+    </div>
+  </div>
+
+
+<!-- CF Overlay (robust) -->
+<style id="cf-overlay-styles">
+#cf-backdrop{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.35);z-index:99999}
+#cf-panel{width:min(520px,92vw);max-height:86vh;overflow:auto;background:#111418;color:#e6e8eb;border:1px solid rgba(255,255,255,.07);border-radius:16px;box-shadow:0 10px 40px rgba(0,0,0,.45);animation:cf-pop .16s ease-out}
+@keyframes cf-pop{from{transform:translateY(8px) scale(.98);opacity:0}to{transform:translateY(0) scale(1);opacity:1}}
+.cf-head{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid rgba(255,255,255,.06)}
+#cf-close{all:unset;cursor:pointer;font-size:18px;line-height:1;padding:4px 8px;border-radius:10px}
+#cf-close:hover{background:rgba(255,255,255,.06)}
+#cf-content{padding:16px;font-size:14px}
+.cf-foot{padding:12px 16px;border-top:1px solid rgba(255,255,255,.06);display:flex;justify-content:end}
+#cf-ok{all:unset;cursor:pointer;padding:8px 14px;border-radius:10px;background:#2a6df6;color:#fff;font-weight:600}
+#cf-ok:hover{filter:brightness(1.08)}
+.cf-pill{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;font-weight:600;border:1px solid rgba(255,255,255,.12)}
+.cf-pill.ok{background:rgba(14,159,110,.16)}
+.cf-pill.warn{background:rgba(245,158,11,.16)}
+.cf-pill.err{background:rgba(239,68,68,.16)}
+
+    @media (prefers-reduced-motion: reduce) {
+      .animate-ping { animation: none !important; }
+    }
+  </style>
+<div id="cf-backdrop" aria-hidden="true">
+  <div id="cf-panel" role="dialog" aria-modal="true" aria-labelledby="cf-title" tabindex="-1">
+    <header class="cf-head">
+      <h3 id="cf-title">Call Forward Status</h3>
+      <button id="cf-close" type="button" aria-label="Close">✕</button>
+
+    </header>
+    <div id="cf-content"></div>
+    <footer class="cf-foot">
+      <button id="cf-ok" type="button">Close</button>
+    </footer>
+  </div>
+</div>
+<script>
+(function(){
+  const $ = s=>document.querySelector(s);
+  function show(html, title){
+    const b=$('#cf-backdrop'), c=$('#cf-content'), t=$('#cf-title');
+    if(t && title) t.textContent=title;
+    if(c) c.innerHTML = html;
+    if(b){ b.style.display='flex'; b.setAttribute('aria-hidden','false'); }
+    $('#cf-panel')?.focus();
+    window.addEventListener('keydown', esc, { once:true });
+  }
+  function esc(e){ if(e.key==='Escape') hide(); }
+  function hide(){
+    const b = document.getElementById('cf-backdrop');
+    if(b){ b.style.display='none'; b.setAttribute('aria-hidden','true'); }
+  }
+  document.addEventListener('DOMContentLoaded', ()=>{
+    document.getElementById('cf-close')?.addEventListener('click', hide);
+    document.getElementById('cf-ok')?.addEventListener('click', hide);
+    document.getElementById('cf-backdrop')?.addEventListener('click', (e)=>{ if(e.target.id==='cf-backdrop') hide(); });
+  });
+  window.CFOverlay = {
+    showResult: ({ok, alwaysNumber, rawText})=>{
+      const status = ok ? `<span class="cf-pill ok">Forwarded to ${alwaysNumber||''}</span>`
+                        : `<span class="cf-pill warn">Forwarding not configured</span>`;
+      const details = rawText ? `<pre style="margin-top:12px;white-space:pre-wrap;word-break:break-word;opacity:.8">${rawText}</pre>` : '';
+      show(`<p style="margin:0 0 8px 0">Result</p><div>${status}</div>${details}`, 'Call Forward Status');
+    },
+    showHTML: (title, message)=>{
+      const html = Array.isArray(message) ? message.map(x=>('<div style="margin-bottom:.25rem">'+x+'</div>')).join('')
+                                          : (message || '');
+      show(html, title || 'Info');
+    },
+    hide: hide
+  };
+})();
+</script>
+
+
+<script>
+(function(){
+  function updateVisibility(){
+    var verbose = document.getElementById('verbose');
+    var show = !!(verbose && verbose.checked);
+    var pre = document.getElementById('result');
+    if(pre){ pre.style.display = show ? '' : 'none'; }
+    var notes = document.getElementById('notesPanel');
+    if(notes){ notes.style.display = show ? '' : 'none'; }
+  }
+  document.addEventListener('DOMContentLoaded', function(){
+    var v = document.getElementById('verbose');
+    if(v){ v.addEventListener('change', updateVisibility); }
+    updateVisibility();
+  });
+})();
+</script>
+
+
+
+<!-- injected: forward->verify wrapper v4 (observer-based; preserves Settings) -->
+<script>
+(function(){
+  function normalizeAusE164(input){
+    if(!input) return "";
+    var raw = String(input).trim().replace(/[^\d+]/g, "");
+    if(raw.indexOf("+61")===0){ return "+61" + raw.slice(3).replace(/\D/g,""); }
+    var digits = raw.replace(/\D/g,"");
+    if(digits.length===10 && digits.charAt(0)==='0') return "+61" + digits.slice(1);
+    if(digits.length===9) return "+61" + digits;
+    if(digits.length===11 && digits.indexOf("61")===0) return "+" + digits;
+    if(raw.indexOf("+")===0) return raw;
+    return raw;
+  }
+  function validMobile(v){ return /^\d{10}$/.test(v||""); }
+  function delay(ms){ return new Promise(r=>setTimeout(r, ms)); }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    try{
+      var btn = document.getElementById('btnForward');
+      var orig = window.doForward;
+      if(!btn || typeof orig!=='function'){ return; }
+
+      // Use our wrapper without touching Settings code
+      try{ btn.removeEventListener('click', orig); }catch(_e){}
+      btn.addEventListener('click', async function(){
+        var input = document.getElementById('mobile');
+        var raw = input ? input.value.trim() : "";
+        if(!validMobile(raw)){
+          try{ window.toast && toast('Please enter a 10-digit number'); }catch(_e){}
+          try{ window.setStatus && setStatus('Invalid','amber'); }catch(_e){}
+          return;
+        }
+
+        // Hide the toast temporarily to avoid "Forward failed" flash
+        var hideStyle = document.getElementById('pcp-hide-toast');
+        if(!hideStyle){
+          hideStyle = document.createElement('style');
+          hideStyle.id = 'pcp-hide-toast';
+          hideStyle.textContent = '#toast{ display:none !important }';
+          document.head.appendChild(hideStyle);
+        }
+
+        // Observe and smooth status updates to avoid "Failed" flicker
+        var badge = document.getElementById('statusBadge');
+        var observer = null;
+        var inVerify = true;
+        function setChecking(){
+          if(!badge) return;
+          badge.textContent = 'Checking…';
+          badge.className = 'tag bg-amber-100 text-amber-700';
+        }
+        setChecking();
+        if(badge && window.MutationObserver){
+          observer = new MutationObserver(function(muts){
+            if(!inVerify) return;
+            try{
+              var text = (badge.textContent||'').toLowerCase();
+              // Keep it on Checking… while verifying; prevent Failed/Forwarded flashes
+              if(text.indexOf('failed')!==-1 || text.indexOf('forwarded')!==-1){
+                setChecking();
+              }
+            }catch(e){}
+          });
+          observer.observe(badge, { childList:true, characterData:true, subtree:true, attributes:true });
+        }
+
+        // Run original forward
+        try{ await orig(); }catch(_e){}
+
+        // Ensure visible "Checking…" during the wait
+        setChecking();
+
+        // VERIFY
+        await delay(2500);
+        try{
+          var endpointCheck = document.getElementById('endpointCheck')?.value || '/api/v1/mgmt/device/runningConfig';
+          var rc = await apiFetch(endpointCheck, { method:'GET' });
+          var parsed=null, callfwUrl=null;
+          try{ parsed = JSON.parse(rc.response.body); }catch(_e){}
+          if(parsed && parsed.data && parsed.data.Provisioning && parsed.data.Provisioning.Server){
+            callfwUrl = teamsCallfwUrlFromProvisioning(parsed.data.Provisioning.Server);
+          }
+
+          var report = { url: callfwUrl, ok:false, status:0, reported:null, notConfigured:false, note:null };
+          if(callfwUrl){
+            var tf = await apiFetch(callfwUrl, { method:'GET' });
+            report.ok = !!tf.ok; report.status = tf.status||0;
+            if(tf && tf.response && typeof tf.response.body === 'string'){
+              var rawText = tf.response.body;
+              var num = extractForwardNumber(rawText);
+              if(num){ report.reported = num; }
+              else {
+                var tl = rawText.toLowerCase();
+                if (tl.indexOf('set [always')!==-1 || tl.indexOf('reset [*32*')!==-1) report.notConfigured = true;
+              }
+              report.rawText = rawText;
+            }
+          } else {
+            report.note = 'Could not derive callfw.php URL from Provisioning.Server';
+          }
+
+          var enteredE164 = normalizeAusE164(raw);
+          if(enteredE164){ report.entered = enteredE164; }
+          if(report.reported && enteredE164){ report.match = (enteredE164 === report.reported); }
+
+          // Stop smoothing and restore toast
+          inVerify = false;
+          if(observer){ try{ observer.disconnect(); }catch(e){} }
+          var hs = document.getElementById('pcp-hide-toast');
+          if(hs && hs.parentNode){ hs.parentNode.removeChild(hs); }
+
+          // Apply final status + overlay
+          if(typeof window.updateStatusFromReport === 'function'){
+            window.updateStatusFromReport(report, enteredE164);
+          } else {
+            // minimal badge update if helper not present
+            if(badge){
+              if(report.note && report.status===403){ badge.textContent='Not checkable'; badge.className='tag bg-slate-100 text-slate-700'; }
+              else if(report.notConfigured){ badge.textContent='Not forwarded'; badge.className='tag bg-amber-100 text-amber-700'; }
+              else if(report.reported && enteredE164){
+                if(report.reported === enteredE164){ badge.textContent='Forwarded'; badge.className='tag bg-emerald-100 text-emerald-700'; }
+                else { badge.textContent='Mismatch'; badge.className='tag bg-amber-100 text-amber-700'; }
+              }
+            }
+          }
+          if(typeof window.presentOverlayForForwardReport === 'function'){
+            window.presentOverlayForForwardReport(report);
+          } else if(window.CFOverlay && CFOverlay.showHTML){
+            var lines = [];
+            if(report.url) lines.push('Checked: ' + report.url);
+            if(report.reported) lines.push('Microsoft Teams reports: ' + report.reported);
+            if(enteredE164) lines.push('You entered: ' + enteredE164);
+            if(typeof report.match==='boolean') lines.push(report.match ? '✔ Numbers match. Forwarding is set!' : '✖ Numbers do not match yet.');
+            if(!lines.length) lines.push('Unable to verify after forward.');
+            CFOverlay.showHTML('Confirm Forwarding', lines);
+          }
+        }catch(_e){
+          // On verification error, stop smoothing/hiding and show a generic failed
+          inVerify = false;
+          if(observer){ try{ observer.disconnect(); }catch(e){} }
+          var hs = document.getElementById('pcp-hide-toast');
+          if(hs && hs.parentNode){ hs.parentNode.removeChild(hs); }
+        }
+      });
+    }catch(_e){ /* ignore */ }
+  });
+})();
+</script>
+
+
+<!-- Help / Instructions Modal -->
+
+
+<div id="helpBackdrop" class="fixed inset-0 z-[60] hidden flex items-center justify-center">
+  <div id="helpBg" class="absolute inset-0 bg-black/30"></div>
+  <div class="relative w-[min(1120px,96vw)] max-h-[90vh] overflow-auto rounded-2xl bg-white p-8 shadow-xl ring-1 ring-slate-200">
+    <div class="mb-4 flex items-center justify-between">
+      <h3 class="text-2xl font-semibold">Instructions</h3>
+      <button id="helpClose" class="rounded-full p-2 hover:bg-slate-100" title="Close">✕</button>
+    </div>
+
+    <div class="wiki">
+      
+      <p><em>Online status:</em> A small dot + label appears <strong>to the left of the Settings button</strong> and shows whether the phone is reachable (Online / Unreachable / Error / Checking / No URL).</p>
+
+      <h3>Main screen</h3>
+      <p>Type the 10‑digit mobile number (no spaces or dashes) and use the actions below.</p>
+      <div class="imgwrap block">
+        <img src="instructions/main_screen_ux33.png" alt="Main App screenshot">
+      </div>
+      <ul>
+        <li><strong>Forward</strong> — sends the forward command (<code>*33*{{mobile}}</code>).</li>
+        <li><strong>Check Forward</strong> — fetches running config and Teams call forward page to confirm the active number.</li>
+        <li><strong>Clear</strong> — clears the local UI fields only (does not affect the phone).</li>
+        <li><strong>Speed dials</strong> — add entries for common numbers. Use the small input icon to <em>Load into number field</em>, or click <strong>Forward</strong> on a row to trigger forwarding immediately.</li>
+      </ul>
+      <h3>Speed dials</h3>
+      <p>Use speed dials for your common forward targets. Click <strong>+ Add</strong>, give it a name and a <strong>10‑digit</strong> mobile. Then either press the <em>arrow</em> to copy it into the main field or press <strong>Forward</strong> on that row to send the command immediately.</p>
+      <div class="imgwrap block">
+        <img src="instructions/speeddials_example_ux33.png" alt="Speed dials example (dummy numbers)">
+      </div>
+      <p>Example dummy entries are shown above (<em>Josh S → 0411223344</em>, <em>Scott D → 0411228899</em>). Use <strong>Export</strong>/<strong>Import</strong> to back up or share your list.</p>
+
+
+      <h3>Settings</h3>
+      <p>Base URL is mandatory but the auth is optional if your phone allows unauthenticated API access. Endpoints are prefilled for Polycom VVX phones</p>
+      <div class="imgwrap block">
+        <img src="instructions/settings.png" alt="Settings screenshot">
+      </div>
+      <ul>
+        <li><strong>PhoneNetAddress (Base URL)</strong> — e.g. <code>https://192.168.24.12</code></li>
+        <li><strong>Forward endpoint (POST)</strong> — default <code>/api/v1/callctrl/dial</code></li>
+        <li><strong>Check endpoint (GET)</strong> — default <code>/api/v1/mgmt/device/runningConfig</code></li>
+        <li><strong>Reboot endpoint (POST)</strong> — default <code>/api/v1/mgmt/safeReboot</code></li>
+        <li><strong>Forward body template</strong> — JSON template with <code>{{mobile}}</code> placeholder.</li>
+      </ul>
+
+      <h3>Diagnostics</h3>
+      <p>Use the Diagnostics window to run connectivity checks and maintenance.</p>
+      <div class="imgwrap block">
+        <img src="instructions/diagnostics.png" alt="Diagnostics screenshot">
+      </div>
+      <ul>
+        <li><strong>Verbose logs</strong> — toggles detailed request/response output.</li>
+        <li><strong>Test Connection</strong> — reads running config.</li>
+        <li><strong>Clear Forward</strong> — dials <code>*32*</code> to remove forwarding from the phone.</li>
+        <li><strong>Reboot Phone</strong> — sends a safe reboot command.</li>
+        <li><strong>Activity log</strong> — running log with <em>Copy</em> and <em>Clear</em> controls.</li>
+        <li><strong>Connection</strong> — shows the latest diagnostics output (<code>&lt;pre id="diag"&gt;</code>).</li>
+      </ul>
+
+      <h3>Status badge meanings</h3>
+      <p>The badge to the right of <strong>Result</strong> shows the current state:</p>
+      <ul>
+        <li><span class="badge" style="background:#f1f5f9;color:#334155;">Idle</span> — no action in progress.</li>
+        <li><span class="badge" style="background:#e0e7ff;color:#3730a3;">Forwarding…</span> — sending forward command.</li>
+        <li><span class="badge" style="background:#d1fae5;color:#065f46;">Forwarded</span> — forward command accepted.</li>
+        <li><span class="badge" style="background:#e0f2fe;color:#075985;">Checking…</span> — reading running config / Teams.</li>
+        <li><span class="badge" style="background:#fde68a;color:#92400e;">Invalid</span> — invalid mobile format or missing settings.</li>
+        <li><span class="badge" style="background:#fecaca;color:#7f1d1d;">Failed</span> — API call failed.</li>
+        <li><span class="badge" style="background:#fde68a;color:#92400e;">Rebooting…</span> — reboot command sent.</li>
+        <li><span class="badge" style="background:#d1fae5;color:#065f46;">Cleared</span> — forwarding cleared via <code>*32*</code>.</li>
+      </ul>
+    </div>
+
+    <div class="mt-6 text-right">
+      <button id="helpOk" class="btn btn-clear">Close</button>
+    </div>
+  </div>
+</div>
+
+
+<script>
+  (function(){
+    function toggleHelp(open){
+      var b = document.getElementById('helpBackdrop');
+      if(!b) return;
+      b.classList[open ? 'remove' : 'add']('hidden');
+      if(open){ var ok = b.querySelector('button#helpOk'); if(ok) { ok.focus(); } }
+    }
+    document.addEventListener('DOMContentLoaded', function(){
+      var h = document.getElementById('btnHelp');
+      if(h){ h.addEventListener('click', function(){ toggleHelp(true); }); }
+      var c = document.getElementById('helpClose'); if(c){ c.addEventListener('click', function(){ toggleHelp(false); }); }
+      var ok = document.getElementById('helpOk'); if(ok){ ok.addEventListener('click', function(){ toggleHelp(false); }); }
+      var bg = document.getElementById('helpBg'); if(bg){ bg.addEventListener('click', function(){ toggleHelp(false); }); }
+      document.addEventListener('keydown', function(e){ if(e.key==='Escape') toggleHelp(false); });
+    });
+  })();
+</script>
+
+
+<script>
+(function(){
+  const KEY = 'pcpSpeedDials';
+
+  function getList(){
+    try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; }
+  }
+  function saveList(list){
+    localStorage.setItem(KEY, JSON.stringify(list));
+  }
+  function sanitizeNumber(v){
+    return String(v||'').replace(/\D/g,'').slice(0,10);
+  }
+  function render(){
+    const host = document.getElementById('speedDialList');
+    const empty = document.getElementById('noSpeedDials');
+    if(!host) return;
+    const list = getList();
+    host.innerHTML = '';
+    if(empty) empty.classList.toggle('hidden', list.length>0);
+    list.forEach((it, idx)=>{
+      const row = document.createElement('div');
+      row.className = 'grid grid-cols-12 items-center px-3 py-2 text-sm';
+      row.innerHTML = `
+        <div class="col-span-5 pr-2 min-w-0">
+          <input type="text" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100" value="${(it.name||'').replace(/"/g,'&quot;')}" data-field="name" />
+        </div>
+        <div class="col-span-4 pr-2 min-w-0">
+          <input type="tel" inputmode="numeric" class="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm focus:ring-2 focus:ring-indigo-100" value="${(it.number||'')}" data-field="number" placeholder="04xxxxxxxx" />
+        </div>
+        <div class="col-span-3 flex flex-wrap items-center justify-end gap-2">
+          <button class="rounded p-2 hover:bg-slate-100 text-slate-600" data-action="fill" title="Load into number field" aria-label="Load into number field"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="h-4 w-4"><path d="M3 12h12"/><path d="M11 8l4 4-4 4"/><rect x="3" y="4" width="18" height="16" rx="2" ry="2" class="opacity-0"/></svg></button>
+          <button class="btn btn-forward px-3 py-1 text-xs" data-action="forward">Forward</button>
+          <button class="btn btn-clear px-3 py-1 text-xs text-rose-600" data-action="delete" title="Remove">✕</button>
+        </div>`;
+      // Wire events
+      row.querySelectorAll('input').forEach(inp=>{
+        inp.addEventListener('input', (e)=>{
+          const field = e.target.getAttribute('data-field');
+          const list2 = getList();
+          if(field==='name'){ list2[idx].name = e.target.value; }
+          else { list2[idx].number = sanitizeNumber(e.target.value); e.target.value = list2[idx].number; }
+          saveList(list2);
+        });
+      });
+      row.querySelector('[data-action="fill"]').addEventListener('click', ()=>{
+        const list2 = getList(); const n = (list2[idx]?.number)||'';
+        if(!/^\d{10}$/.test(n)){ try{ toast('Speed dial number must be 10 digits'); setStatus('Invalid','amber'); }catch{} return; }
+        const mobile = document.getElementById('mobile'); if(mobile){ mobile.value = n; mobile.focus(); }
+      });
+      row.querySelector('[data-action="forward"]').addEventListener('click', ()=>{
+        const list2 = getList(); const n = (list2[idx]?.number)||'';
+        if(!/^\d{10}$/.test(n)){ try{ toast('Speed dial number must be 10 digits'); setStatus('Invalid','amber'); }catch{} return; }
+        const mobile = document.getElementById('mobile'); if(mobile){ mobile.value = n; }
+        const btn = document.getElementById('btnForward'); if(btn){ btn.click(); }
+      });
+      row.querySelector('[data-action="delete"]').addEventListener('click', ()=>{
+        const list2 = getList(); list2.splice(idx,1); saveList(list2); render();
+      });
+      host.appendChild(row);
+    });
+  }
+  function add(){
+    const list = getList();
+    list.push({ name:'', number:'' });
+    saveList(list);
+    render();
+  }
+  function exportJson(){
+    const data = JSON.stringify(getList(), null, 2);
+    const blob = new Blob([data], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'pcp_speed_dials.json'; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  }
+  function importJson(){
+    const inp = document.createElement('input');
+    inp.type = 'file'; inp.accept = 'application/json';
+    inp.addEventListener('change', ()=>{
+      const f = inp.files && inp.files[0]; if(!f) return;
+      const reader = new FileReader();
+      reader.onload = ()=>{
+        try{
+          const arr = JSON.parse(reader.result);
+          if(Array.isArray(arr)){ saveList(arr.map(x=>({name:String(x.name||''), number:sanitizeNumber(x.number)}))); render(); }
+        }catch(e){ console.error(e); }
+      };
+      reader.readAsText(f);
+    });
+    inp.click();
+  }
+
+  document.addEventListener('DOMContentLoaded', function(){
+    document.getElementById('addSpeedDial')?.addEventListener('click', add);
+    document.getElementById('exportSpeedDial')?.addEventListener('click', exportJson);
+    document.getElementById('importSpeedDial')?.addEventListener('click', importJson);
+    render();
+  });
+
+  window._pcpSpeedDial = { getList, saveList, render, add };
+})();
+</script>
+
+
+<!-- Speed dials (full width at bottom) -->
+<div id="speedDialCard" class="glass rounded-3xl bg-white/70 p-4 shadow-inner ring-1 ring-slate-100 mt-8">
+  <div id="speedDialSection">
+    <div class="mb-2 flex items-center justify-between">
+      <h3 class="text-sm font-semibold">Speed dials</h3>
+      <div class="flex items-center gap-2">
+        <button id="importSpeedDial" class="btn btn-clear">Import</button>
+        <button id="exportSpeedDial" class="btn btn-clear">Export</button>
+        <button id="addSpeedDial" class="btn btn-clear">+ Add</button>
+      </div>
+    </div>
+    <div class="rounded-2xl ring-1 ring-slate-100 overflow-hidden">
+      <div class="grid grid-cols-12 bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-600">
+        <div class="col-span-5">Name</div>
+        <div class="col-span-4">Number (10 digits)</div>
+        <div class="col-span-3 text-right">Actions</div>
+      </div>
+      <div id="speedDialList" class="divide-y divide-slate-100 overflow-x-auto"></div>
+      <div id="noSpeedDials" class="px-3 py-3 text-sm text-slate-500">No speed dials yet. Click <strong>+ Add</strong> to create one.</div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>
